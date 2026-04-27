@@ -33,7 +33,7 @@ This package owns **declarative config + Python ergonomics**. OmniRoute owns the
 Ships:
 
 - ✅ `omniroutectl` CLI: `up`, `down`, `destroy`, `doctor`, `env-sync`, `models`, `sync`, plus the originals (`init`, `configure`, `status`, `smoke-test`, `catalog`, `version`) — 12 subcommands total.
-- ✅ Curated catalog (`config/free-providers.yaml`) — 21 providers across free-tier LLM, search, STT/TTS, paid fallback. `aliases:` field per entry so a shell var named `CLAUDE_CONSOLE_API_KEY` is recognized as `ANTHROPIC_API_KEY`.
+- ✅ Curated catalog (`omni_route_config/free-providers.yaml`, shipped inside the package) — 21 providers across free-tier LLM, search, STT/TTS, paid fallback. `aliases:` field per entry so a shell var named `CLAUDE_CONSOLE_API_KEY` is recognized as `ANTHROPIC_API_KEY`.
 - ✅ `.env` lifecycle: read shell env → fill blanks → generate missing secrets → write atomically with `0600` perms.
 - ✅ Docker lifecycle: persistent volume `omniroute-data`, named container `omniroute`, restart policy `unless-stopped`. `down` stops, `destroy` removes the volume (data loss — prompts to confirm).
 - ✅ Pydantic-validated catalog and REST contract.
@@ -244,7 +244,7 @@ omniroutectl up
 
 ---
 
-## Catalog (`config/free-providers.yaml`)
+## Catalog (`omni_route_config/free-providers.yaml`)
 
 ```yaml
 providers:
