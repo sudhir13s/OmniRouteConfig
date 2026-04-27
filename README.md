@@ -49,18 +49,82 @@ Roadmap:
 ## Install
 
 ```bash
-# Editable install (recommended while v0.1)
+# Editable install — when working on OmniRouteConfig itself
 git clone git@github.com:sudhir13s/OmniRouteConfig.git
 cd OmniRouteConfig
 pip install -e ".[dev,client]"
 
-# Or pip-install once published
-pip install "OmniRouteConfig @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@main"
+# One-shot install — when you just want the CLI on your machine
+pip install "OmniRouteConfig @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@v0.2.0"
 ```
 
 The Python import name stays lowercase per PEP 8: `from omni_route_config import bootstrap, client`.
 
 Prerequisites: Python 3.11+ and Docker. (`scripts/setup.sh` checks both.)
+
+---
+
+## Use as a dependency from another project
+
+OmniRouteConfig is **not on PyPI** and is not planned to be. Other projects pull it directly from this Git repo. Pin to a tag (`v0.2.0`) for stable consumers, or to `main` for tip-of-tree.
+
+### `pyproject.toml` (PEP 621 / setuptools / hatch)
+
+```toml
+[project]
+dependencies = [
+  "OmniRouteConfig @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@v0.2.0",
+]
+
+# Optional: pull the OpenAI-SDK adapter too
+[project.optional-dependencies]
+ai = [
+  "OmniRouteConfig[client] @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@v0.2.0",
+]
+```
+
+### `requirements.txt`
+
+```text
+# pinned to a tag (recommended for prod)
+OmniRouteConfig @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@v0.2.0
+
+# or pin to a commit SHA for full reproducibility
+OmniRouteConfig @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@7bdce4d
+
+# or follow main
+OmniRouteConfig @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@main
+```
+
+### `uv` (PEP 723 / `uv add`)
+
+```bash
+uv add "git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@v0.2.0"
+```
+
+### `poetry`
+
+```bash
+poetry add "git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git#v0.2.0"
+```
+
+### HTTPS instead of SSH
+
+If your CI doesn't have SSH keys to github.com, swap `git+ssh://git@github.com/...` for `git+https://github.com/...`. Same path otherwise.
+
+### What you can import after installation
+
+```python
+from omni_route_config import (
+    # core
+    bootstrap, client, registry, load_catalog,
+    # types
+    ProviderEntry, ProviderCatalog, ApplyResult, OmniRouteStatus,
+    ModelEntry, ProviderRegistry, ModelType, SyncDiff,
+)
+```
+
+The CLI `omniroutectl` is also installed on `$PATH` in the consumer project's venv. Consuming projects typically use the **library imports** (programmatic in-process bootstrap/apply) and skip the CLI — see [Programmatic use](#programmatic-use) below.
 
 ---
 
