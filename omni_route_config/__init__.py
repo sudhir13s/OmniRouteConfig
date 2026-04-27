@@ -19,23 +19,35 @@ See README for installation + usage.
 
 from __future__ import annotations
 
-from omni_route_config import bootstrap, client
+from omni_route_config import bootstrap, client, registry
 from omni_route_config.catalog import (
     ProviderCatalog,
     ProviderEntry,
     load_catalog,
 )
-from omni_route_config.types import ApplyResult, OmniRouteStatus
+from omni_route_config.types import (
+    ApplyResult,
+    ModelEntry,
+    ModelType,
+    OmniRouteStatus,
+    ProviderRegistry,
+    SyncDiff,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ApplyResult",
+    "ModelEntry",
+    "ModelType",
     "OmniRouteStatus",
     "ProviderCatalog",
     "ProviderEntry",
+    "ProviderRegistry",
+    "SyncDiff",
     "__version__",
     "bootstrap",
     "client",
     "load_catalog",
+    "registry",
 ]

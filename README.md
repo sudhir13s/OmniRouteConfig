@@ -32,17 +32,17 @@ This package owns **declarative config + Python ergonomics**. OmniRoute owns the
 
 Ships:
 
-- ✅ `omniroutectl` CLI: `up`, `down`, `destroy`, `doctor`, `env-sync`, plus the originals (`init`, `configure`, `status`, `smoke-test`, `catalog`, `version`).
+- ✅ `omniroutectl` CLI: `up`, `down`, `destroy`, `doctor`, `env-sync`, `models`, `sync`, plus the originals (`init`, `configure`, `status`, `smoke-test`, `catalog`, `version`) — 12 subcommands total.
 - ✅ Curated catalog (`config/free-providers.yaml`) — 21 providers across free-tier LLM, search, STT/TTS, paid fallback. `aliases:` field per entry so a shell var named `CLAUDE_CONSOLE_API_KEY` is recognized as `ANTHROPIC_API_KEY`.
 - ✅ `.env` lifecycle: read shell env → fill blanks → generate missing secrets → write atomically with `0600` perms.
 - ✅ Docker lifecycle: persistent volume `omniroute-data`, named container `omniroute`, restart policy `unless-stopped`. `down` stops, `destroy` removes the volume (data loss — prompts to confirm).
 - ✅ Pydantic-validated catalog and REST contract.
-- ✅ Tests: 33 passing, mocked OmniRoute via `respx`.
+- ✅ Live registry: `models` lists models by provider + modality, `sync` reconciles YAML vs OmniRoute's live `/api/v1/models` response. 24h disk cache at `.omniroute/registry.json`.
+- ✅ Tests: 68 passing, mocked OmniRoute via `respx`.
 
 Roadmap:
 
-- `v0.2` — OAuth provider helpers (Cursor, Claude Code, Codex device-flow trigger).
-- `v0.3` — Catalog auto-update from OmniRoute's `/api/v1/models`.
+- `v0.4` — TBD.
 
 ---
 
@@ -127,6 +127,8 @@ The 17 are catalog entries you have no key for — those are silently skipped, n
 | `omniroutectl destroy --yes` | `down` + remove the persistent volume. **DESTRUCTIVE.** |
 | `omniroutectl env-sync` | Read shell + existing .env → generate missing secrets → write merged .env |
 | `omniroutectl doctor` | Audit: which provider keys are present, container state, .env health |
+| `omniroutectl models [--type TYPE] [--provider P] [--no-cache]` | Fetch live model list from OmniRoute, grouped by provider + modality. JSON output. 24h cache. |
+| `omniroutectl sync [--path P] [--write] [--no-cache]` | Diff local YAML catalog vs OmniRoute's live registry. `--write` appends missing providers. |
 | `omniroutectl init` | Just start OmniRoute (no env-sync, no apply) |
 | `omniroutectl configure` | Just push the catalog to a running OmniRoute |
 | `omniroutectl status` | Reachability + how many providers OmniRoute has configured |
@@ -185,8 +187,8 @@ providers:
   - provider: groq                     # OmniRoute provider id (must match upstream)
     env_var: GROQ_API_KEY              # env var holding the API key
     priority: 10                       # lower = higher priority in OmniRoute's chain
-    name: Groq (Llama 3.3 + Mixtral + Whisper)
     default_model: llama-3.3-70b-versatile
+    routing_strategy: priority         # optional; default is OmniRoute's instance-wide priority strategy
 
   - provider: anthropic
     env_var: ANTHROPIC_API_KEY
@@ -200,6 +202,31 @@ Adding a row:
 1. Confirm the `provider` id exists in the OmniRoute upstream registry (`src/shared/constants/providers.ts`). If it doesn't, POST returns `400 Invalid provider`.
 2. Pick a `priority` matching the existing bands (10s = top free, 40-90 = generalist/specialist, 100s = search, 200+ = paid fallback). Don't collide with existing.
 3. Add the env var to `.env.example` so users know what to set.
+
+---
+
+## Discovering models (live registry)
+
+Once OmniRoute is running, `models` and `sync` let you inspect what's actually available vs what the local catalog declares.
+
+```bash
+omniroutectl models                           # all providers, all modalities (JSON)
+omniroutectl models --type audio              # only audio models (STT/TTS)
+omniroutectl models --provider groq           # only groq's models
+omniroutectl models --no-cache                # force live fetch, skip 24h disk cache
+
+omniroutectl sync                             # dry-run: diff YAML vs live registry
+omniroutectl sync --write                     # append in_remote_only providers to local YAML
+```
+
+`sync` output groups providers into three buckets:
+- `in_yaml_only` — in your local catalog but not in OmniRoute's `/api/v1/models`. Likely stale.
+- `in_remote_only` — OmniRoute knows about them but your YAML has no entry. `--write` appends these with a guessed `env_var` and `priority: 500`.
+- `matched` — present in both. Healthy.
+
+Modality taxonomy sourced from OmniRoute's `/api/v1/models`: `chat`, `embedding`, `image`, `audio`, `rerank`, `moderation`, `video`, `music`.
+
+The registry module is also importable: `from omni_route_config.registry import get_registry`.
 
 ---
 
@@ -229,6 +256,7 @@ asyncio.run(main())
 ## What this is NOT
 
 - Not a router. OmniRoute owns model selection, fallback, MCP, OAuth flows.
+- Not a parallel/scatter-gather router. OmniRoute is sequential-fallback by design (verified upstream). All 6 routing strategies — `priority`, `weighted`, `round-robin`, `random`, `least-used`, `cost-optimized` — execute providers one at a time.
 - Not a manager for OmniRoute's full ~38 server-side env vars. Anything in `.env` is passed through Docker via `--env-file`, but only the fields documented in `.env.example` are owned by `env_sync`. Add more rows freely; they pass through.
 - Not a long-running service. Every CLI invocation is one-shot. The persistent state lives in:
   - `.env` (your secrets + provider keys)

@@ -27,7 +27,7 @@ def _cat() -> ProviderCatalog:
 def test_parse_dotenv_handles_quotes_comments_blanks(tmp_path):
     p = tmp_path / ".env"
     p.write_text(
-        '# comment\n\nKEY1=plain\nKEY2="quoted"\nKEY3=\'single\'\nKEY4=\nINVALID_LINE\n',
+        "# comment\n\nKEY1=plain\nKEY2=\"quoted\"\nKEY3='single'\nKEY4=\nINVALID_LINE\n",
         encoding="utf-8",
     )
     out = parse_dotenv(p)

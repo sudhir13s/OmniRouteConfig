@@ -39,17 +39,15 @@ from omni_route_config.catalog import ProviderCatalog, load_catalog
 # (they sign up via the dashboard form themselves). Set it manually in
 # .env or in your shell if you want a non-default seed.
 SERVER_SECRETS = (
-    "JWT_SECRET",          # base64 48 — admin session signing
-    "API_KEY_SECRET",      # hex 32   — bearer-token HMAC
+    "JWT_SECRET",  # base64 48 — admin session signing
+    "API_KEY_SECRET",  # hex 32   — bearer-token HMAC
     "STORAGE_ENCRYPTION_KEY",  # hex 32  — at-rest encryption for SQLite-stored secrets
-    "MACHINE_ID_SALT",     # 16 chars — fingerprint stability salt
+    "MACHINE_ID_SALT",  # 16 chars — fingerprint stability salt
 )
 
 # User-managed secrets we surface (write a blank slot for visibility) but
 # NEVER auto-generate. Existing values are preserved.
-USER_MANAGED_SECRETS = (
-    "INITIAL_PASSWORD",
-)
+USER_MANAGED_SECRETS = ("INITIAL_PASSWORD",)
 
 SERVER_DEFAULTS = {
     "NODE_ENV": "production",
@@ -274,12 +272,15 @@ def sync_env_file(
         defaults_added.append(k)
 
     sections = (
-        ("OmniRouteConfig wiring", [
-            "OMNIROUTE_URL",
-            "OMNIROUTE_PORT",
-            "OMNIROUTE_API_TOKEN",
-            "OMNI_ROUTE_CONFIG_PATH",
-        ]),
+        (
+            "OmniRouteConfig wiring",
+            [
+                "OMNIROUTE_URL",
+                "OMNIROUTE_PORT",
+                "OMNIROUTE_API_TOKEN",
+                "OMNI_ROUTE_CONFIG_PATH",
+            ],
+        ),
         ("OmniRoute server secrets — DO NOT COMMIT", list(SERVER_SECRETS)),
         ("OmniRoute admin (you set this on dashboard signup)", list(USER_MANAGED_SECRETS)),
         ("OmniRoute server runtime", list(SERVER_DEFAULTS.keys())),

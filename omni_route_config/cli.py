@@ -11,6 +11,8 @@ Subcommands:
   status       Print whether OmniRoute is reachable + how many providers it has.
   smoke-test   Send a dummy chat completion through the chain (requires `[client]` extra).
   catalog      Print the parsed catalog (validates the YAML).
+  models       List models OmniRoute exposes, grouped by provider + modality.
+  sync         Compare local YAML catalog vs OmniRoute's live registry.
   version      Print this package version.
 
 The convenience commands (up, down, destroy, doctor, env-sync) wrap the
@@ -41,8 +43,10 @@ from omni_route_config.bootstrap import (
     status,
     tear_down,
 )
-from omni_route_config.catalog import load_catalog
+from omni_route_config.catalog import ProviderEntry, load_catalog
 from omni_route_config.env_sync import SERVER_SECRETS, sync_env_file
+from omni_route_config.registry import get_registry
+from omni_route_config.types import ModelType
 
 
 def _print(payload: Any) -> None:
@@ -221,6 +225,128 @@ async def _cmd_up(args: argparse.Namespace) -> int:
     return 0 if apply.errors == 0 else 3
 
 
+async def _cmd_models(args: argparse.Namespace) -> int:
+    """List models grouped by provider, optionally filtered by type/provider."""
+    try:
+        reg = await get_registry(use_cache=not args.no_cache)
+    except Exception as e:
+        _print({"error": type(e).__name__, "detail": str(e)})
+        return 2
+
+    type_filter: ModelType | None = args.type
+    provider_filter: str | None = args.provider
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for prov, models in reg.providers.items():
+        if provider_filter and prov != provider_filter:
+            continue
+        bucket: list[dict[str, Any]] = []
+        for m in models:
+            if type_filter and m.type != type_filter:
+                continue
+            bucket.append(
+                {
+                    "id": m.id,
+                    "type": m.type,
+                    "subtype": m.subtype,
+                    "context_length": m.context_length,
+                    "input_modalities": m.input_modalities,
+                    "output_modalities": m.output_modalities,
+                    "custom": m.custom,
+                }
+            )
+        if bucket:
+            grouped[prov] = bucket
+
+    _print(
+        {
+            "base_url": reg.base_url,
+            "fetched_at": reg.fetched_at.isoformat(),
+            "model_count": sum(len(v) for v in grouped.values()),
+            "providers": grouped,
+        }
+    )
+    return 0
+
+
+async def _cmd_sync(args: argparse.Namespace) -> int:
+    """Compare local YAML catalog vs live OmniRoute registry. Optionally rewrite YAML."""
+    cat = load_catalog(args.path)
+    try:
+        reg = await get_registry(use_cache=not args.no_cache)
+    except Exception as e:
+        _print({"error": type(e).__name__, "detail": str(e)})
+        return 2
+
+    yaml_provider_ids = {e.provider for e in cat.providers}
+    remote_ids = set(reg.providers.keys())
+
+    in_yaml_only = sorted(yaml_provider_ids - remote_ids)
+    in_remote_only = sorted(remote_ids - yaml_provider_ids)
+    matched = sorted(yaml_provider_ids & remote_ids)
+
+    summary = {
+        "yaml_path": str(args.path) if args.path else None,
+        "remote_base_url": reg.base_url,
+        "in_yaml_only": in_yaml_only,
+        "in_remote_only": in_remote_only,
+        "matched": matched,
+        "model_count_per_matched_provider": {p: len(reg.providers.get(p, [])) for p in matched},
+    }
+
+    if not args.write:
+        _print({**summary, "wrote": None})
+        return 0
+
+    if not in_remote_only:
+        _print({**summary, "wrote": None, "reason": "no additions to write"})
+        return 0
+
+    target = Path(args.path).expanduser() if args.path else _bundled_catalog_path()
+    if not target.exists():
+        _print({**summary, "wrote": None, "error": f"target YAML missing: {target}"})
+        return 2
+
+    new_rows = [
+        ProviderEntry(provider=pid, env_var=_guess_env_var(pid), priority=500)
+        for pid in in_remote_only
+    ]
+    _append_rows_to_yaml(target, new_rows)
+    _print({**summary, "wrote": str(target), "added": [r.provider for r in new_rows]})
+    return 0
+
+
+def _bundled_catalog_path() -> Path:
+    from omni_route_config.catalog import DEFAULT_CATALOG_PATH
+
+    return DEFAULT_CATALOG_PATH
+
+
+def _guess_env_var(provider_id: str) -> str:
+    """Best-effort env var name for an unknown provider id.
+
+    Mirrors the convention in the curated YAML: uppercase, hyphens →
+    underscores, suffix `_API_KEY`. Search providers should be edited by
+    hand; we still emit a sane placeholder.
+    """
+    return f"{provider_id.upper().replace('-', '_')}_API_KEY"
+
+
+def _append_rows_to_yaml(target: Path, rows: list[ProviderEntry]) -> None:
+    """Append new ProviderEntry rows to an existing YAML file.
+
+    Preserves the file's existing content (comments, ordering) by
+    appending to the bottom; doesn't try to round-trip the YAML.
+    """
+    import yaml
+
+    body = "\n# --- added by `omniroutectl sync --write` ---\n"
+    payload = [{k: v for k, v in r.model_dump().items() if v not in (None, [], {})} for r in rows]
+    body += yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
+    with target.open("a", encoding="utf-8") as f:
+        f.write(body)
+
+
 # ---------- parser ----------
 
 
@@ -259,14 +385,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Send a dummy chat completion through OmniRoute (requires [client] extra)",
     )
     p_smoke.add_argument("--model", default="auto")
-    p_smoke.add_argument(
-        "--prompt", default="Say 'OmniRouteConfig online' and nothing else."
-    )
+    p_smoke.add_argument("--prompt", default="Say 'OmniRouteConfig online' and nothing else.")
     p_smoke.set_defaults(func=_cmd_smoke, async_=True)
 
-    sub.add_parser(
-        "down", help="Stop OmniRoute container/process. Volume preserved."
-    ).set_defaults(func=cmd_down, async_=False)
+    sub.add_parser("down", help="Stop OmniRoute container/process. Volume preserved.").set_defaults(
+        func=cmd_down, async_=False
+    )
 
     p_destroy = sub.add_parser(
         "destroy",
@@ -297,6 +421,54 @@ def build_parser() -> argparse.ArgumentParser:
     p_up.add_argument("--port", type=int, default=None)
     p_up.add_argument("--timeout", type=int, default=90)
     p_up.set_defaults(func=_cmd_up, async_=True)
+
+    p_models = sub.add_parser(
+        "models",
+        help="List models OmniRoute exposes, grouped by provider + modality",
+    )
+    p_models.add_argument(
+        "--type",
+        choices=[
+            "chat",
+            "embedding",
+            "image",
+            "audio",
+            "rerank",
+            "moderation",
+            "video",
+            "music",
+        ],
+        default=None,
+        help="Filter by modality.",
+    )
+    p_models.add_argument(
+        "--provider",
+        default=None,
+        help="Filter by provider id (e.g. groq, gemini).",
+    )
+    p_models.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force live fetch, bypass and refresh the 24h disk cache.",
+    )
+    p_models.set_defaults(func=_cmd_models, async_=True)
+
+    p_sync = sub.add_parser(
+        "sync",
+        help="Compare local YAML catalog vs OmniRoute's live provider registry.",
+    )
+    p_sync.add_argument("--path", default=None, help="Path to free-providers.yaml")
+    p_sync.add_argument(
+        "--write",
+        action="store_true",
+        help="Append rows for providers OmniRoute exposes but YAML doesn't list.",
+    )
+    p_sync.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force live fetch of registry.",
+    )
+    p_sync.set_defaults(func=_cmd_sync, async_=True)
 
     return parser
 

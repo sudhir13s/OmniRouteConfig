@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 from contextlib import redirect_stdout
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 import respx
 
 from omni_route_config.cli import main
+from omni_route_config.types import ModelEntry, ProviderRegistry
 
 # Env vars in the bundled catalog. Wiped per test so a developer's real shell
 # keys don't leak into apply_config() and produce real POSTs.
@@ -139,9 +142,7 @@ def test_cli_init_unreachable_exits_2(clean_env):
     async def _fast_unreachable(**kwargs):
         from omni_route_config.types import OmniRouteStatus
 
-        return OmniRouteStatus(
-            base_url="http://omni.test", reachable=False, detail="forced"
-        )
+        return OmniRouteStatus(base_url="http://omni.test", reachable=False, detail="forced")
 
     clean_env.setattr(cli_mod, "ensure_running", _fast_unreachable)
     buf = io.StringIO()
@@ -172,9 +173,7 @@ def test_cli_configure_no_keys_set_exits_0(clean_env):
 def test_cli_configure_http_error_exits_3(clean_env):
     clean_env.setenv("OMNIROUTE_URL", "http://omni.test")
     clean_env.setenv("GROQ_API_KEY", "test-groq-key")
-    respx.post("http://omni.test/api/providers").mock(
-        return_value=httpx.Response(500, text="boom")
-    )
+    respx.post("http://omni.test/api/providers").mock(return_value=httpx.Response(500, text="boom"))
     buf = io.StringIO()
     with redirect_stdout(buf):
         rc = main(["configure"])
@@ -326,9 +325,7 @@ def test_cli_up_unreachable_exits_2(clean_env, tmp_path, monkeypatch):
     from omni_route_config.types import OmniRouteStatus
 
     async def _unreachable(**kwargs):
-        return OmniRouteStatus(
-            base_url="http://omni.test", reachable=False, detail="forced"
-        )
+        return OmniRouteStatus(base_url="http://omni.test", reachable=False, detail="forced")
 
     monkeypatch.setattr(cli_mod, "ensure_running", _unreachable)
 
@@ -354,3 +351,212 @@ def test_cli_smoke_test_missing_extra_exits_4(monkeypatch, capsys):
     assert rc == 4
     out = capsys.readouterr().out
     assert "openai_for_omniroute" in out or "error" in out
+
+
+# ---------------------------------------------------------------------------
+# helpers shared by models + sync tests
+# ---------------------------------------------------------------------------
+
+
+def _make_registry() -> ProviderRegistry:
+    return ProviderRegistry(
+        base_url="http://omni.test",
+        fetched_at=datetime.now(tz=UTC),
+        providers={
+            "groq": [
+                ModelEntry(id="llama-3.3-70b", provider="groq"),
+                ModelEntry(id="mixtral-8x7b", provider="groq"),
+            ],
+            "openai": [
+                ModelEntry(
+                    id="text-embedding-3-large",
+                    provider="openai",
+                    type="embedding",
+                ),
+            ],
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# models subcommand
+# ---------------------------------------------------------------------------
+
+
+def test_cli_models_basic_output(monkeypatch):
+    async def _fake_registry(**kwargs):
+        return _make_registry()
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _fake_registry)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["models"])
+    assert rc == 0
+    payload = json.loads(buf.getvalue())
+    assert payload["model_count"] == 3
+    assert "groq" in payload["providers"]
+    assert "openai" in payload["providers"]
+
+
+def test_cli_models_filter_by_type(monkeypatch):
+    async def _fake_registry(**kwargs):
+        return _make_registry()
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _fake_registry)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["models", "--type", "embedding"])
+    assert rc == 0
+    payload = json.loads(buf.getvalue())
+    assert payload["model_count"] == 1
+    assert "openai" in payload["providers"]
+    assert "groq" not in payload["providers"]
+
+
+def test_cli_models_filter_by_provider(monkeypatch):
+    async def _fake_registry(**kwargs):
+        return _make_registry()
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _fake_registry)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["models", "--provider", "groq"])
+    assert rc == 0
+    payload = json.loads(buf.getvalue())
+    assert payload["model_count"] == 2
+    assert "groq" in payload["providers"]
+    assert "openai" not in payload["providers"]
+
+
+def test_cli_models_no_cache_flag_passed_through(monkeypatch):
+    received: dict = {}
+
+    async def _fake_registry(**kwargs):
+        received.update(kwargs)
+        return _make_registry()
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _fake_registry)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["models", "--no-cache"])
+    assert rc == 0
+    assert received.get("use_cache") is False
+
+
+def test_cli_models_returns_2_on_fetch_error(monkeypatch):
+    async def _failing(**kwargs):
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _failing)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["models"])
+    assert rc == 2
+    payload = json.loads(buf.getvalue())
+    assert "error" in payload
+    assert "detail" in payload
+
+
+# ---------------------------------------------------------------------------
+# sync subcommand
+# ---------------------------------------------------------------------------
+
+
+def test_cli_sync_dry_run_reports_diff(monkeypatch):
+    """Remote has brand-new-one (not in YAML); YAML has catalog-only providers."""
+
+    async def _fake_registry(**kwargs):
+        # groq + gemini are in the bundled YAML; brand-new-one is not
+        return ProviderRegistry(
+            base_url="http://omni.test",
+            fetched_at=datetime.now(tz=UTC),
+            providers={
+                "groq": [ModelEntry(id="llama-3.3-70b", provider="groq")],
+                "gemini": [ModelEntry(id="gemini-pro", provider="gemini")],
+                "brand-new-one": [],
+            },
+        )
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _fake_registry)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["sync"])
+    assert rc == 0
+    payload = json.loads(buf.getvalue())
+    assert payload["wrote"] is None
+    assert "brand-new-one" in payload["in_remote_only"]
+    # The bundled YAML has many more providers than groq+gemini
+    assert len(payload["in_yaml_only"]) > 0
+
+
+def test_cli_sync_with_write_appends_new_rows(monkeypatch, tmp_path):
+    from omni_route_config.catalog import DEFAULT_CATALOG_PATH
+
+    tmp_yaml = tmp_path / "free-providers.yaml"
+    shutil.copy(DEFAULT_CATALOG_PATH, tmp_yaml)
+
+    async def _fake_registry(**kwargs):
+        return ProviderRegistry(
+            base_url="http://omni.test",
+            fetched_at=datetime.now(tz=UTC),
+            providers={
+                "groq": [ModelEntry(id="llama-3.3-70b", provider="groq")],
+                "brand-new-one": [],
+            },
+        )
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _fake_registry)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["sync", "--path", str(tmp_yaml), "--write"])
+    assert rc == 0
+    payload = json.loads(buf.getvalue())
+    assert payload["wrote"] == str(tmp_yaml)
+    contents = tmp_yaml.read_text(encoding="utf-8")
+    assert "provider: brand-new-one" in contents
+    assert "BRAND_NEW_ONE_API_KEY" in contents
+    # Original rows still present
+    assert "provider: groq" in contents
+
+
+def test_cli_sync_write_no_op_when_no_additions(monkeypatch, tmp_path):
+    from omni_route_config.catalog import DEFAULT_CATALOG_PATH, load_catalog
+
+    tmp_yaml = tmp_path / "free-providers.yaml"
+    shutil.copy(DEFAULT_CATALOG_PATH, tmp_yaml)
+
+    # Build a registry whose provider ids exactly match the YAML
+    cat = load_catalog(str(tmp_yaml))
+    yaml_ids = {e.provider for e in cat.providers}
+
+    async def _fake_registry(**kwargs):
+        return ProviderRegistry(
+            base_url="http://omni.test",
+            fetched_at=datetime.now(tz=UTC),
+            providers={pid: [] for pid in yaml_ids},
+        )
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _fake_registry)
+    original = tmp_yaml.read_text(encoding="utf-8")
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["sync", "--path", str(tmp_yaml), "--write"])
+    assert rc == 0
+    payload = json.loads(buf.getvalue())
+    assert payload["wrote"] is None
+    assert "no addition" in (payload.get("reason") or "").lower()
+    # File must be untouched
+    assert tmp_yaml.read_text(encoding="utf-8") == original
+
+
+def test_cli_sync_returns_2_on_fetch_error(monkeypatch):
+    async def _failing(**kwargs):
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr("omni_route_config.cli.get_registry", _failing)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["sync"])
+    assert rc == 2
+    payload = json.loads(buf.getvalue())
+    assert "error" in payload

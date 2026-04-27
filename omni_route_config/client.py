@@ -49,11 +49,7 @@ def openai_for_omniroute(
             "Install the `client` extra: `pip install 'OmniRouteConfig[client]'`"
         ) from e
 
-    key = (
-        api_key
-        or os.environ.get("OMNIROUTE_API_TOKEN", "").strip()
-        or "sk-omniroute-local"
-    )
+    key = api_key or os.environ.get("OMNIROUTE_API_TOKEN", "").strip() or "sk-omniroute-local"
     return OpenAI(
         base_url=_omniroute_base(),
         api_key=key,

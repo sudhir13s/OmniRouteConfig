@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "OmniRouteConfig"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bootstrap + auto-configure OmniRoute for $0-spend AI routing. Curated provider configs, env-var conventions, idempotent setup scripts."
 readme = "README.md"
 license = { text = "MIT" }
