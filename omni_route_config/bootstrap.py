@@ -61,6 +61,7 @@ def _docker_image() -> str:
 def _docker_volume() -> str:
     return os.environ.get("OMNIROUTE_VOLUME", DEFAULT_VOLUME)
 
+
 # `/api/init` returns `{"initialized": true|false}` and is the canonical
 # health endpoint in OmniRoute (verified against v3.7.x). `/api/health`
 # and `/api/version` do NOT exist upstream. `/` returns a 307 redirect
@@ -251,11 +252,17 @@ def _start_docker(*, port: int) -> None:
         return
 
     cmd: list[str] = [
-        "docker", "run", "-d",
-        "--name", name,
-        "--restart", "unless-stopped",
-        "-p", f"{port}:20128",
-        "-v", f"{_docker_volume()}:/app/data",
+        "docker",
+        "run",
+        "-d",
+        "--name",
+        name,
+        "--restart",
+        "unless-stopped",
+        "-p",
+        f"{port}:20128",
+        "-v",
+        f"{_docker_volume()}:/app/data",
     ]
     env_file = Path(os.environ.get("OMNIROUTE_ENV_FILE", ".env"))
     if env_file.exists():
@@ -344,13 +351,16 @@ async def _post_provider(
     payload: dict[str, Any] = {
         "provider": entry.provider,
         "apiKey": api_key,
-        "name": entry.name or entry.provider,
+        "name": entry.provider,
         "priority": entry.priority,
     }
     if entry.default_model:
         payload["defaultModel"] = entry.default_model
-    if entry.provider_specific_data:
-        payload["providerSpecificData"] = entry.provider_specific_data
+    psd = dict(entry.provider_specific_data or {})
+    if entry.routing_strategy:
+        psd.setdefault("routingStrategy", entry.routing_strategy)
+    if psd:
+        payload["providerSpecificData"] = psd
     try:
         resp = await client.post(f"{base}/api/providers", json=payload)
     except httpx.HTTPError as e:

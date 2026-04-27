@@ -19,7 +19,6 @@ providers:
   - provider: groq
     env_var: GROQ_API_KEY
     priority: 10
-    name: Groq (Llama 3.3 + Mixtral + Whisper)
     default_model: llama-3.3-70b-versatile
     note: >
       Per-model RPD pools — multiple models on Groq give
@@ -29,13 +28,11 @@ providers:
   - provider: cerebras
     env_var: CEREBRAS_API_KEY
     priority: 20
-    name: Cerebras (fast Llama 70B)
     default_model: llama3.1-70b
 
   - provider: gemini
     env_var: GEMINI_API_KEY
     priority: 30
-    name: Google AI Studio (Gemini)
     default_model: gemini-2.0-flash-exp
 
   # ============================================================
@@ -45,30 +42,25 @@ providers:
   - provider: openrouter
     env_var: OPENROUTER_API_KEY
     priority: 40
-    name: OpenRouter (free :free models)
     note: Use ":free" suffixed models in OmniRoute combos.
 
   - provider: together
     env_var: TOGETHER_API_KEY
     priority: 50
-    name: Together AI
 
   - provider: mistral
     env_var: MISTRAL_API_KEY
     priority: 60
-    name: Mistral La Plateforme
     default_model: open-mistral-7b
 
   - provider: nvidia
     env_var: NVIDIA_API_KEY
     priority: 65
-    name: NVIDIA NIM
     default_model: meta/llama-3.1-70b-instruct
 
   - provider: huggingface
     env_var: HF_TOKEN
     priority: 70
-    name: HuggingFace Inference
 
   # ============================================================
   # Specialists.
@@ -77,17 +69,14 @@ providers:
   - provider: deepseek
     env_var: DEEPSEEK_API_KEY
     priority: 75
-    name: DeepSeek (reasoning + code)
 
   - provider: fireworks
     env_var: FIREWORKS_API_KEY
     priority: 80
-    name: Fireworks AI
 
   - provider: cohere
     env_var: COHERE_API_KEY
     priority: 85
-    name: Cohere (rerank + embed)
 
   # ============================================================
   # Multimodal (image / video / audio).
@@ -100,22 +89,18 @@ providers:
   - provider: deepgram
     env_var: DEEPGRAM_API_KEY
     priority: 95
-    name: Deepgram (STT)
 
   - provider: assemblyai
     env_var: ASSEMBLYAI_API_KEY
     priority: 96
-    name: AssemblyAI (STT + diarization)
 
   - provider: elevenlabs
     env_var: ELEVENLABS_API_KEY
     priority: 97
-    name: ElevenLabs (TTS)
 
   - provider: cartesia
     env_var: CARTESIA_API_KEY
     priority: 98
-    name: Cartesia (TTS)
 
   # ============================================================
   # Web search (OmniRoute exposes /api/v1/search backed by these).
@@ -124,22 +109,18 @@ providers:
   - provider: brave-search
     env_var: BRAVE_SEARCH_API_KEY
     priority: 110
-    name: Brave Search
 
   - provider: tavily-search
     env_var: TAVILY_API_KEY
     priority: 115
-    name: Tavily Search
 
   - provider: exa-search
     env_var: EXA_API_KEY
     priority: 120
-    name: Exa Search
 
   - provider: serper-search
     env_var: SERPER_API_KEY
     priority: 125
-    name: Serper Search
 
   # ============================================================
   # Premium fallbacks (need paid keys; ENABLED only if key is set).
@@ -150,11 +131,9 @@ providers:
     aliases:
       - CLAUDE_CONSOLE_API_KEY    # common in user shells; treated as ANTHROPIC_API_KEY
     priority: 200
-    name: Anthropic (paid fallback)
     note: Requires paid key; OmniRoute will only route here if free options exhaust.
 
   - provider: openai
     env_var: OPENAI_API_KEY
     priority: 210
-    name: OpenAI (paid fallback)
     note: Requires paid key; same fallback policy as anthropic.

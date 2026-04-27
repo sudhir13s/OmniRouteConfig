@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,10 +14,18 @@ DEFAULT_CATALOG_PATH = PROJECT_ROOT / "config" / "free-providers.yaml"
 
 _NO_PROTECTED_NS = ConfigDict(protected_namespaces=())
 
+RoutingStrategy = Literal[
+    "priority", "weighted", "round-robin", "random", "least-used", "cost-optimized"
+]
+
 
 class ProviderEntry(BaseModel):
     """One row in the catalog. Maps an OmniRoute provider to the env var
     holding its API key + optional metadata to push on POST.
+
+    v0.3 schema: `name` removed (OmniRoute returns it from /api/providers and
+    /api/v1/models — fetched at runtime via registry). `routing_strategy`
+    added (pass-through to OmniRoute's combo strategies).
     """
 
     model_config = _NO_PROTECTED_NS
@@ -28,9 +36,7 @@ class ProviderEntry(BaseModel):
             "(see OmniRoute's src/shared/constants/providers.ts)."
         ),
     )
-    env_var: str = Field(
-        description="Name of the env var holding the API key (e.g. GROQ_API_KEY)."
-    )
+    env_var: str = Field(description="Name of the env var holding the API key (e.g. GROQ_API_KEY).")
     aliases: list[str] | None = Field(
         default=None,
         description=(
@@ -40,17 +46,24 @@ class ProviderEntry(BaseModel):
             "First non-empty wins."
         ),
     )
-    name: str | None = Field(
-        default=None,
-        description="Human label sent to OmniRoute on POST. Defaults to provider id.",
-    )
     priority: int = Field(
         default=100,
         description="Lower = higher priority in OmniRoute's chain.",
     )
     default_model: str | None = Field(
         default=None,
-        description="Optional preferred model id.",
+        description=(
+            "Optional preferred model id. Auto-flips at runtime when OmniRoute "
+            "rotates the actual model — the value here is just the boot-time hint."
+        ),
+    )
+    routing_strategy: RoutingStrategy | None = Field(
+        default=None,
+        description=(
+            "Per-provider routing strategy (passed to OmniRoute as providerSpecificData). "
+            "Defaults to OmniRoute's instance-wide default (`priority`). "
+            "Options: priority | weighted | round-robin | random | least-used | cost-optimized."
+        ),
     )
     enabled: bool = Field(
         default=True,

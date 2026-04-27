@@ -16,9 +16,7 @@ async def test_status_reachable_returns_provider_count(monkeypatch):
         return_value=httpx.Response(200, json={"initialized": True, "version": "3.7.1"})
     )
     respx.get("http://omni.test/api/providers").mock(
-        return_value=httpx.Response(
-            200, json={"connections": [{"id": "x"}, {"id": "y"}]}
-        )
+        return_value=httpx.Response(200, json={"connections": [{"id": "x"}, {"id": "y"}]})
     )
     s = await bootstrap.status()
     assert s.reachable is True
@@ -58,7 +56,6 @@ async def test_apply_config_posts_runnable_entries(monkeypatch):
                 provider="groq",
                 env_var="GROQ_API_KEY",
                 priority=10,
-                name="Groq Test",
                 default_model="llama-3.3-70b-versatile",
             ),
             ProviderEntry(
@@ -78,7 +75,7 @@ async def test_apply_config_posts_runnable_entries(monkeypatch):
     assert posted[0]["provider"] == "groq"
     assert posted[0]["apiKey"] == "gsk_fake"
     assert posted[0]["priority"] == 10
-    assert posted[0]["name"] == "Groq Test"
+    assert posted[0]["name"] == "groq"
     assert posted[0]["defaultModel"] == "llama-3.3-70b-versatile"
 
 
@@ -89,9 +86,7 @@ async def test_apply_config_handles_already_present(monkeypatch):
     respx.post("http://omni.test/api/providers").mock(
         return_value=httpx.Response(409, json={"error": "already exists"})
     )
-    cat = ProviderCatalog(
-        providers=[ProviderEntry(provider="x", env_var="X_KEY")]
-    )
+    cat = ProviderCatalog(providers=[ProviderEntry(provider="x", env_var="X_KEY")])
     result = await bootstrap.apply_config(cat)
     assert result.already_present == 1
     assert result.applied == 0
@@ -101,12 +96,8 @@ async def test_apply_config_handles_already_present(monkeypatch):
 async def test_apply_config_records_http_errors(monkeypatch):
     monkeypatch.setenv("OMNIROUTE_URL", "http://omni.test")
     monkeypatch.setenv("X_KEY", "v")
-    respx.post("http://omni.test/api/providers").mock(
-        return_value=httpx.Response(500, text="boom")
-    )
-    cat = ProviderCatalog(
-        providers=[ProviderEntry(provider="x", env_var="X_KEY")]
-    )
+    respx.post("http://omni.test/api/providers").mock(return_value=httpx.Response(500, text="boom"))
+    cat = ProviderCatalog(providers=[ProviderEntry(provider="x", env_var="X_KEY")])
     result = await bootstrap.apply_config(cat)
     assert result.errors == 1
     assert result.items[0].status == "error"
