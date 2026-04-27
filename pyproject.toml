@@ -62,7 +62,7 @@ include = ["omni_route_config*"]
 exclude = ["omni_route_config.tests*", "tests*"]
 
 [tool.setuptools.package-data]
-omni_route_config = ["py.typed", "config/*.yaml"]
+omni_route_config = ["py.typed", "*.yaml"]
 
 [tool.ruff]
 line-length = 100

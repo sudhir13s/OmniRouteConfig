@@ -1,4 +1,4 @@
-"""Catalog loader — parses config/free-providers.yaml into typed rows."""
+"""Catalog loader — parses the bundled free-providers.yaml into typed rows."""
 
 from __future__ import annotations
 
@@ -9,8 +9,10 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CATALOG_PATH = PROJECT_ROOT / "config" / "free-providers.yaml"
+# Catalog ships INSIDE the package so pip installs reach it. Resolves
+# the same in dev (running from source) and from a pip install — path
+# is relative to this module file, not the repo root.
+DEFAULT_CATALOG_PATH = Path(__file__).resolve().parent / "free-providers.yaml"
 
 _NO_PROTECTED_NS = ConfigDict(protected_namespaces=())
 
@@ -98,7 +100,7 @@ def load_catalog(path: str | Path | None = None) -> ProviderCatalog:
     Precedence (last wins):
       1. explicit `path` argument
       2. `OMNI_ROUTE_CONFIG_PATH` env var
-      3. bundled default at `<repo>/config/free-providers.yaml`
+      3. bundled default at `omni_route_config/free-providers.yaml`
 
     Raises FileNotFoundError if no readable file is found.
     """

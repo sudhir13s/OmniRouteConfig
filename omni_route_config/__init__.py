@@ -5,7 +5,7 @@ Public API:
     from omni_route_config import (
         bootstrap,        # ensure_running, apply_config, tear_down
         client,           # openai_for_omniroute()
-        load_catalog,     # parse config/free-providers.yaml
+        load_catalog,     # parse the bundled free-providers.yaml
         ProviderEntry,    # catalog row schema
         ApplyResult,      # what apply_config() returns
     )
