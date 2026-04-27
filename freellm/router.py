@@ -15,7 +15,8 @@ import os
 from typing import Any
 
 from freellm import quotas
-from freellm.providers import PROVIDERS, list_providers
+from freellm.config import get_config
+from freellm.providers import list_providers
 from freellm.schemas import (
     Modality,
     Plan,
@@ -76,7 +77,7 @@ def plan(
     """
     if allow_paid is None:
         allow_paid = os.environ.get("LLM_ALLOW_PAID") == "1"
-    entries = PROVIDERS.get(modality, [])
+    entries = get_config().providers.get(modality, [])
     state = quotas.load()
     kept, skipped = _filter_chain(entries, state, allow_paid=allow_paid)
     options = [opt for _, opt in kept]
@@ -209,12 +210,15 @@ async def call_tts(
 
 # Pure-function helper for catalog inspection (used by CLI + tests).
 def catalog_summary() -> dict[str, int]:
-    """Return modality -> count of entries."""
-    return {modality: len(entries) for modality, entries in PROVIDERS.items()}
+    """Return modality -> count of entries (in the live, layered config)."""
+    return {
+        modality: len(entries)
+        for modality, entries in get_config().providers.items()
+    }
 
 
 def total_entries() -> int:
-    return sum(len(e) for e in PROVIDERS.values())
+    return sum(len(e) for e in get_config().providers.values())
 
 
 def list_all() -> list[ProviderEntry]:

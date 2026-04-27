@@ -12,27 +12,29 @@
 
 Given a modality (text / vision / image_gen / video_gen / embed / stt / tts) and a `task_name`, the router picks the first **free-tier** provider whose API key is present in the environment and whose daily quota isn't exhausted. On 4xx/5xx, falls through to the next provider. Returns a typed `Result` with which provider answered + cost (always `0.00`).
 
-Catalog ships with **28 entries across 7 modalities** (Groq, Cerebras, Gemini, OpenRouter, Together, Mistral, NVIDIA NIM, SambaNova, AI21, HuggingFace, Replicate, fal.ai, Voyage, Cohere, ElevenLabs, …). All hand-curated against documented free tiers; verified monthly.
+Catalog ships with **48 entries across 7 modalities** (Groq, Cerebras, Gemini, OpenRouter, Together, Mistral, NVIDIA NIM, SambaNova, HuggingFace, Replicate, fal.ai, Voyage, Cohere, ElevenLabs, …). All hand-curated against documented free tiers; verified monthly.
+
+The catalog deliberately ships **multiple models per provider where rate limits are per-model** — see [Rate-limit semantics](#rate-limit-semantics) below. Each `(provider, model)` pair has its own quota counter, so rotating across models on the same provider gives effectively additive throughput.
 
 ---
 
 ## Status
 
-`v0.1` ships:
+`v0.2` ships:
 
-- ✅ Catalog (28 entries × 7 modalities) — `from freellm import PROVIDERS, list_providers`
+- ✅ Catalog (48 entries across 7 modalities) — `from freellm import PROVIDERS, list_providers`
 - ✅ Routing plan (`freellm.plan(modality=..., task_name=...)`) — dry-run picks the chain WITHOUT making any network call
 - ✅ Persistent quota tracker (`freellm.quotas.load() / save()`) — auto-disables a provider after 3 consecutive failures
+- ✅ **Config layer (NEW)** — `freellm.yaml` auto-load + `freellm.configure(...)` programmatic API. Disable providers, re-order priority, add custom providers without forking
 - ✅ CLI: `python -m freellm catalog | plan | quotas | keys | version`
 - ✅ Discriminated-union `FreeTier` schema (RpmRpd / TokensPerMonth / RequestsPerDay / OneTimeCredits / AlwaysFreeWithLimits)
 - ✅ Pydantic v2 models, fully typed, no implicit `Any`
 
-`v0.1` does NOT yet ship:
+`v0.2` does NOT yet ship:
 
-- ⏳ Live LiteLLM dispatch — `await call_text(...)` raises `NotImplementedError`. Fix lands in `v0.2` once the LiteLLM adapter is wired.
-- ⏳ User config layer (`freellm.yaml` + `freellm.configure()`). Lands in `v0.2`.
+- ⏳ Live LiteLLM dispatch — `await call_text(...)` raises `NotImplementedError`. Fix lands in the LiteLLM-adapter PR (v0.3).
 
-Use today for: dry-run plan inspection, catalog reads, quota state introspection, CLI tooling. The library shape is locked — `v0.2` adds runtime without breaking the contract.
+Use today for: dry-run plan inspection, catalog reads, quota state introspection, custom config layering, CLI tooling. Library shape is locked — v0.3 adds runtime without breaking the contract.
 
 ---
 
@@ -168,15 +170,33 @@ Design rules:
 
 ## Modalities covered
 
-| Modality | What | Free providers in catalog |
+| Modality | What | Entries in catalog |
 |---|---|---|
-| `text` | Chat / completion | 10 |
-| `vision` | Text + image input → text output | 3 |
+| `text` | Chat / completion | **26** (Groq×5, Gemini×4, OpenRouter×4, Cerebras×3, NVIDIA NIM×3, Mistral×3, Together×2, SambaNova×1, HF×1) |
+| `vision` | Text + image input → text output | **5** (Groq×2, OpenRouter×2, Gemini×1) |
 | `image_gen` | Text → image | 4 |
 | `video_gen` | Text → short video | 2 |
 | `embed` | Text → embedding vector | 5 |
-| `stt` | Speech → text | 2 |
+| `stt` | Speech → text | **4** (Groq×3, HF×1) |
 | `tts` | Text → speech | 2 |
+
+## Rate-limit semantics
+
+Free-tier providers fall into two camps:
+
+- **Per-model rate limits** (Groq, Cerebras, Gemini, OpenRouter `:free`, NVIDIA NIM, Mistral, partly Together) — every `(provider, model)` pair has its own RPM/RPD/token pool. Rotating across models on the same provider gives **effectively additive throughput** without spending a cent more. The catalog deliberately ships multiple models per provider here. `quotas.py` keys on `provider:model` (not `provider`) so the auto-disable + counter logic respects this.
+
+  Concrete example: Groq's free tier gives `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `llama-3.2-3b-preview`, `mixtral-8x7b-32768`, and `gemma2-9b-it` each their own 14,400 RPD pool. With one Groq API key you get **5 × 14,400 = 72,000 free text req/day** before the chain rotates to Cerebras, Gemini, etc.
+
+- **Per-account rate limits** (HuggingFace Inference, Cohere, Voyage, Replicate, fal.ai, ElevenLabs, SambaNova) — single shared pool or credit balance for the whole account. Multi-model rotation does NOT help. Catalog ships one canonical entry per such provider per modality.
+
+The fallback chain order built into the catalog is:
+
+1. **Same provider, sibling model** (additive throughput where supported).
+2. **Next provider with sibling models** (per-model pools).
+3. **Per-account-pool providers** (HF / Cohere / Voyage / etc.) at the tail.
+
+Override the order per modality via `freellm.configure(order={"text": ["cerebras", "groq", ...]})`.
 
 Out of scope: GPU compute (Colab / Kaggle / RunPod) — those are notebook UIs, not API-callable. Track them in your application layer.
 
@@ -188,9 +208,66 @@ MIT. Catalog data ships under CC-BY-4.0 (give credit if you republish the curate
 
 ---
 
+## Configuration
+
+Three layers, in precedence order (last wins):
+
+### 1. Built-in catalog
+Ships in `freellm/providers.py`. Always loaded.
+
+### 2. YAML config file (auto-loaded)
+Drop a `freellm.yaml` in your CWD or set `FREELLM_CONFIG_PATH`:
+
+```yaml
+disable:
+  - replicate              # we hit Replicate's quota; skip entirely
+
+order:
+  text:
+    - cerebras             # try Cerebras first; faster than Groq for our prompts
+    - groq
+    - gemini
+
+extra_providers:
+  text:
+    - provider: my_proxy
+      model: my-llama-70b
+      env_var: MY_PROXY_KEY
+      speed_tier: fast
+      last_verified: "2026-04-26"
+      free_tier:
+        kind: rpm_rpd
+        rpm: 60
+        rpd: 100000
+```
+
+Auto-load happens at import time. Opt out with `FREELLM_NO_AUTO_LOAD=1`.
+
+### 3. Programmatic API
+```python
+import freellm
+
+freellm.configure(
+    disable=["replicate"],
+    order={"text": ["cerebras", "groq", "gemini"]},
+    extra_providers={"text": [{...}]},
+)
+
+# Inspect
+cfg = freellm.get_config()
+print(cfg.total_entries, cfg.disabled, cfg.order)
+
+# Restore built-in defaults (useful in tests)
+freellm.reset()
+```
+
+Three layers compose cleanly: built-in catalog → YAML overrides → programmatic overrides. Calling `configure()` twice is additive, not replacing — pass `reset_first=True` to start fresh.
+
+---
+
 ## Roadmap
 
-- `v0.2` — LiteLLM adapter + live `call_*`, `freellm.yaml` config loader, `freellm.configure()` programmatic API
-- `v0.3` — `estimate_cost_and_eta()` for the Media-Benchmark use case
-- `v0.4` — calibration agent (`freellm/calibrate.py`) that smoke-tests + auto-updates ETA per provider
+- `v0.2` ✅ Config layer + per-model catalog expansion (this release)
+- `v0.3` — LiteLLM adapter + live `call_*` runtime
+- `v0.4` — `estimate_cost_and_eta()` for media-benchmark use case + calibration agent
 - `v1.0` — PyPI publish + stable API guarantee
