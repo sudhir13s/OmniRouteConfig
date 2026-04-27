@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Env / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# OmniRoute install artifacts (when bootstrap.ensure_running pulls a local copy)
+.omniroute/
+omniroute.pid
+omniroute.sock
+
+# Build artefacts
+*.whl
+*.tar.gz
