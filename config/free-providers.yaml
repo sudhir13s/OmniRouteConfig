@@ -1,10 +1,10 @@
-# omni-route-config — curated free-tier provider catalog for OmniRoute.
+# OmniRouteConfig — curated free-tier provider catalog for OmniRoute.
 #
 # Each `provider` MUST be a valid OmniRoute provider id
 # (see `OmniRoute/src/shared/constants/providers.ts` in the OmniRoute repo
 #  for the authoritative list).
 #
-# `env_var` names the env var omni-route-config reads to find the API key.
+# `env_var` names the env var OmniRouteConfig reads to find the API key.
 # Missing keys -> the row is silently skipped.
 #
 # `priority` is OmniRoute-native: lower = higher priority.
@@ -93,10 +93,9 @@ providers:
   # Multimodal (image / video / audio).
   # ============================================================
 
-  - provider: replicate
-    env_var: REPLICATE_API_TOKEN
-    priority: 90
-    name: Replicate (image + video gen)
+  # `replicate` removed 2026-04-27 — not in OmniRoute upstream provider
+  # registry as of v3.7.x (validated against running container).
+  # Re-add when upstream lands the node.
 
   - provider: deepgram
     env_var: DEEPGRAM_API_KEY
@@ -148,6 +147,8 @@ providers:
 
   - provider: anthropic
     env_var: ANTHROPIC_API_KEY
+    aliases:
+      - CLAUDE_CONSOLE_API_KEY    # common in user shells; treated as ANTHROPIC_API_KEY
     priority: 200
     name: Anthropic (paid fallback)
     note: Requires paid key; OmniRoute will only route here if free options exhaust.

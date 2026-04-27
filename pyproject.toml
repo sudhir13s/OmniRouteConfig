@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "omni-route-config"
+name = "OmniRouteConfig"
 version = "0.1.0"
 description = "Bootstrap + auto-configure OmniRoute for $0-spend AI routing. Curated provider configs, env-var conventions, idempotent setup scripts."
 readme = "README.md"
@@ -50,12 +50,11 @@ dev = [
 ]
 
 [project.scripts]
-omni-route-config = "omni_route_config.cli:main"
-orcfg = "omni_route_config.cli:main"
+omniroutectl = "omni_route_config.cli:main"
 
 [project.urls]
-Repository = "https://github.com/sudhir13s/omni-route-config"
-Issues = "https://github.com/sudhir13s/omni-route-config/issues"
+Repository = "https://github.com/sudhir13s/OmniRouteConfig"
+Issues = "https://github.com/sudhir13s/OmniRouteConfig/issues"
 OmniRoute = "https://github.com/sudhir13s/OmniRoute"
 
 [tool.setuptools.packages.find]

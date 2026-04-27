@@ -1,166 +1,239 @@
-# omni-route-config
+# OmniRouteConfig
 
-> Bootstrap + auto-configure [OmniRoute](https://github.com/sudhir13s/OmniRoute) for **$0-spend AI routing**. Idempotent Python scripts, env-var conventions, and curated free-tier provider configs. Drop-in setup layer for any project that wants to ship with OmniRoute pre-wired.
+> One CLI to bootstrap [OmniRoute](https://github.com/sudhir13s/OmniRoute) from your shell. Reads provider keys from `os.environ`, generates server secrets, runs the Docker image with a persistent volume, pushes the curated free-tier catalog. Idempotent. Reversible.
 
 [![status](https://img.shields.io/badge/status-alpha-yellow)](#status) ![python](https://img.shields.io/badge/python-3.11%2B-blue) ![license](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
-## What this is (and isn't)
+## What this is
 
-**Is**: a configuration + bootstrap layer that sits on top of OmniRoute. Reads a curated YAML catalog of free-tier providers, reads matching API keys from your environment, and POSTs them to a running OmniRoute instance via `/api/providers`. Plus a thin Python OpenAI-SDK wrapper that talks to OmniRoute's `/api/v1/*` endpoints.
+OmniRoute is a Node.js LLM-router. It exposes a dashboard, an OpenAI-compatible `/api/v1` proxy, and a REST management API. Configuring it manually for every fresh deploy is repetitive — paste keys in the dashboard, set priorities, click save. This package replaces that with one command:
 
-**Isn't**: an LLM router. OmniRoute *is* the router. This package does no inference, owns no quota state, makes no model decisions. It's a **config supplier + lifecycle helper**.
-
-```
-your project (Python)
-    │
-    ├── from omni_route_config import bootstrap, client
-    │
-    ├── bootstrap.ensure_running()          # installs OmniRoute if missing, starts it on :20128
-    ├── bootstrap.apply_config()            # reads config/free-providers.yaml + env vars
-    │                                       #   POSTs each enabled provider to OmniRoute
-    │
-    └── c = client.openai_for_omniroute()   # OpenAI SDK pointed at http://localhost:20128/api/v1
-        c.chat.completions.create(model="auto", messages=[...])
-                                            # → routes through OmniRoute → free providers → response
+```bash
+omniroutectl up
 ```
 
-OmniRoute owns the routing chain, fallback, OAuth flows, MCP server, dashboard. This package owns the **declarative config + Python ergonomics**.
+Which:
+
+1. Reads provider API keys from your shell (`GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, …).
+2. Generates OmniRoute server secrets (`JWT_SECRET`, `API_KEY_SECRET`, `STORAGE_ENCRYPTION_KEY`, `MACHINE_ID_SALT`) on first run, persists them in `.env` so they stay stable across restarts.
+3. `docker run` OmniRoute with `--env-file .env` and a persistent named volume.
+4. Waits for the dashboard to come up.
+5. POSTs every catalog row whose API key is set to OmniRoute's `/api/providers`.
+
+This package owns **declarative config + Python ergonomics**. OmniRoute owns the routing chain, fallback, OAuth flows, MCP server, dashboard.
 
 ---
 
 ## Status
 
-`v0.1` — alpha. Ships:
+`v0.1` — alpha. Verified against `diegosouzapw/omniroute:3.7.x`.
 
-- ✅ Curated provider catalog (`config/free-providers.yaml`) — declarative list of free-tier providers, the env vars OmniRoute expects per provider, default priorities, optional model preferences.
-- ✅ `omni_route_config.bootstrap` — `ensure_running()` (installs via `npx omniroute` or docker, waits for ready), `apply_config()` (POSTs catalog → OmniRoute REST API), `tear_down()`.
-- ✅ `omni_route_config.client` — `openai_for_omniroute()` returns a configured `openai.OpenAI` instance pointed at the local OmniRoute proxy.
-- ✅ `omni-route-config` CLI: `init | configure | status | smoke-test | down`.
-- ✅ Pydantic-validated catalog shape; OmniRoute REST contract typed.
-- ✅ Tests against mocked OmniRoute (`respx`).
+Ships:
+
+- ✅ `omniroutectl` CLI: `up`, `down`, `destroy`, `doctor`, `env-sync`, plus the originals (`init`, `configure`, `status`, `smoke-test`, `catalog`, `version`).
+- ✅ Curated catalog (`config/free-providers.yaml`) — 21 providers across free-tier LLM, search, STT/TTS, paid fallback. `aliases:` field per entry so a shell var named `CLAUDE_CONSOLE_API_KEY` is recognized as `ANTHROPIC_API_KEY`.
+- ✅ `.env` lifecycle: read shell env → fill blanks → generate missing secrets → write atomically with `0600` perms.
+- ✅ Docker lifecycle: persistent volume `omniroute-data`, named container `omniroute`, restart policy `unless-stopped`. `down` stops, `destroy` removes the volume (data loss — prompts to confirm).
+- ✅ Pydantic-validated catalog and REST contract.
+- ✅ Tests: 33 passing, mocked OmniRoute via `respx`.
 
 Roadmap:
 
-- `v0.2` — OAuth provider helpers (Cursor / Claude Code / Codex device-flow trigger).
-- `v0.3` — Catalog auto-update from OmniRoute's own `/api/v1/models` (single source of truth).
-- `v0.4` — `omni-route-config doctor` health probe + repair.
+- `v0.2` — OAuth provider helpers (Cursor, Claude Code, Codex device-flow trigger).
+- `v0.3` — Catalog auto-update from OmniRoute's `/api/v1/models`.
 
 ---
 
 ## Install
 
 ```bash
-# As a library in your project
-pip install "omni-route-config @ git+ssh://git@github.com/sudhir13s/omni-route-config.git@main"
-
-# Or editable / local
-git clone git@github.com:sudhir13s/omni-route-config.git
-cd omni-route-config
+# Editable install (recommended while v0.1)
+git clone git@github.com:sudhir13s/OmniRouteConfig.git
+cd OmniRouteConfig
 pip install -e ".[dev,client]"
+
+# Or pip-install once published
+pip install "OmniRouteConfig @ git+ssh://git@github.com/sudhir13s/OmniRouteConfig.git@main"
 ```
 
-OmniRoute itself ships separately. See [scripts/setup.sh](./scripts/setup.sh) for one-shot install (Node 20+, npm, optional Docker).
+The Python import name stays lowercase per PEP 8: `from omni_route_config import bootstrap, client`.
+
+Prerequisites: Python 3.11+ and Docker. (`scripts/setup.sh` checks both.)
 
 ---
 
-## Quickstart
+## Quickstart (the only commands you need)
+
+```bash
+# 1. Spin up
+omniroutectl up
+#   ↳ writes .env, runs Docker, applies catalog
+#     output shows: keys-from-shell, secrets-generated, apply summary
+
+# 2. First time: open the dashboard, sign up for an admin account.
+#    Set the admin password to whatever you want — this is YOUR password,
+#    not auto-generated.
+open http://localhost:20128
+
+# 3. Dashboard → API Keys → create a management token. Paste into .env:
+#    OMNIROUTE_API_TOKEN=<paste here>
+
+# 4. Re-apply the catalog now that the API is authenticated.
+omniroutectl configure
+
+# 5. Audit any time
+omniroutectl doctor
+omniroutectl status
+
+# 6. Stop (volume preserved — data persists)
+omniroutectl down
+
+# 7. Stop AND remove the volume (DESTROYS admin + connections)
+omniroutectl destroy --yes
+```
+
+Step 3 is one-time. Subsequent restarts just need `omniroutectl up`.
+
+---
+
+## Why two re-applies?
+
+OmniRoute v3.7+ requires a management token for any write. On a fresh container the dashboard is unauthenticated, so step 1 lands here:
+
+```text
+"apply": { "applied": 0, "skipped_missing_key": 17, "errors": 4 }
+                                                    ^^^^^^^^^
+                                                    HTTP 401 — auth gate
+```
+
+After step 3 (admin token in `.env`), step 4 re-runs the apply with the token in the `Authorization: Bearer ...` header and lands here:
+
+```text
+"apply": { "applied": 4, "skipped_missing_key": 17, "errors": 0 }
+```
+
+The 17 are catalog entries you have no key for — those are silently skipped, never errors.
+
+---
+
+## Subcommand reference
+
+| Command | What it does |
+|---|---|
+| `omniroutectl up` | env-sync → docker run with `--env-file` → wait ready → apply catalog |
+| `omniroutectl down` | Stop + remove the container. **Volume preserved.** |
+| `omniroutectl destroy --yes` | `down` + remove the persistent volume. **DESTRUCTIVE.** |
+| `omniroutectl env-sync` | Read shell + existing .env → generate missing secrets → write merged .env |
+| `omniroutectl doctor` | Audit: which provider keys are present, container state, .env health |
+| `omniroutectl init` | Just start OmniRoute (no env-sync, no apply) |
+| `omniroutectl configure` | Just push the catalog to a running OmniRoute |
+| `omniroutectl status` | Reachability + how many providers OmniRoute has configured |
+| `omniroutectl smoke-test` | Send a chat completion through `/api/v1` (requires `[client]` extra) |
+| `omniroutectl catalog` | Print the parsed catalog (validates the YAML) |
+| `omniroutectl version` | Print package version |
+
+Only `omniroutectl` is installed. The legacy `omni-route-config` script alias was dropped in the rename.
+
+---
+
+## How the `.env` is built
+
+`omniroutectl env-sync` (and `up`, which calls it first) merges three sources, **highest priority first**:
+
+1. **Existing `.env`** — never overwritten. Your `INITIAL_PASSWORD=123456`, your custom `JWT_SECRET`, your hand-edited fields all stay.
+2. **Shell env** — fills any blank slot. `os.environ["GROQ_API_KEY"]` → `GROQ_API_KEY=` line. Catalog `aliases:` are honored: if `ANTHROPIC_API_KEY` is empty but `CLAUDE_CONSOLE_API_KEY` is set, the alias's value lands in the canonical slot.
+3. **Generated defaults** — `JWT_SECRET`, `API_KEY_SECRET`, `STORAGE_ENCRYPTION_KEY`, `MACHINE_ID_SALT` are generated on first run only and written. Re-runs preserve them so OmniRoute admin sessions survive container restarts.
+
+**`INITIAL_PASSWORD` is never auto-generated.** It only matters when OmniRoute first boots against an empty volume; you set the real admin password by typing it into the dashboard signup form, not via env. Surfaced as a blank slot for visibility.
+
+`.env` is written with `0600` permissions (best-effort).
+
+---
+
+## How `up` runs Docker
+
+```bash
+docker run -d \
+  --name omniroute \
+  --restart unless-stopped \
+  -p 20128:20128 \
+  -v omniroute-data:/app/data \
+  --env-file .env \
+  diegosouzapw/omniroute:latest
+```
+
+Override defaults via env vars:
+
+```bash
+OMNIROUTE_CONTAINER=omni-prod \
+OMNIROUTE_IMAGE=omniroute:full \
+OMNIROUTE_VOLUME=omniroute-data-prod \
+OMNIROUTE_PORT=20130 \
+omniroutectl up
+```
+
+`OMNIROUTE_IMAGE=omniroute:full` is the natural override if you build your own from the [OmniRoute fork](https://github.com/sudhir13s/OmniRoute) (`docker compose --profile full up -d --build`).
+
+---
+
+## Catalog (`config/free-providers.yaml`)
+
+```yaml
+providers:
+  - provider: groq                     # OmniRoute provider id (must match upstream)
+    env_var: GROQ_API_KEY              # env var holding the API key
+    priority: 10                       # lower = higher priority in OmniRoute's chain
+    name: Groq (Llama 3.3 + Mixtral + Whisper)
+    default_model: llama-3.3-70b-versatile
+
+  - provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    aliases:                           # alternate names env_sync also accepts
+      - CLAUDE_CONSOLE_API_KEY
+    priority: 200
+    note: paid fallback — only routed if free options exhaust
+```
+
+Adding a row:
+1. Confirm the `provider` id exists in the OmniRoute upstream registry (`src/shared/constants/providers.ts`). If it doesn't, POST returns `400 Invalid provider`.
+2. Pick a `priority` matching the existing bands (10s = top free, 40-90 = generalist/specialist, 100s = search, 200+ = paid fallback). Don't collide with existing.
+3. Add the env var to `.env.example` so users know what to set.
+
+---
+
+## Programmatic use
 
 ```python
 import asyncio
 from omni_route_config import bootstrap, client
 
 async def main():
-    # 1. Make sure OmniRoute is running on localhost:20128.
-    #    Installs via `npx omniroute@latest` if not present.
-    await bootstrap.ensure_running(port=20128)
+    await bootstrap.ensure_running(port=20128)        # idempotent
+    summary = await bootstrap.apply_config()          # reads .env, POSTs catalog
+    print(f"applied={summary.applied} skipped={summary.skipped_missing_key}")
 
-    # 2. Read config/free-providers.yaml + your env vars,
-    #    POST each enabled provider to OmniRoute /api/providers.
-    summary = await bootstrap.apply_config()
-    print(f"Configured {summary.applied}/{summary.total} providers")
-
-    # 3. Use the OpenAI SDK pointed at OmniRoute.
-    c = client.openai_for_omniroute()
+    c = client.openai_for_omniroute()                 # OpenAI SDK pre-pointed at proxy
     resp = c.chat.completions.create(
-        model="auto",                      # "auto" lets OmniRoute pick the chain
-        messages=[{"role": "user", "content": "Summarize: ..."}],
+        model="auto",                                  # let OmniRoute pick
+        messages=[{"role": "user", "content": "Say hi"}],
     )
     print(resp.choices[0].message.content)
 
 asyncio.run(main())
 ```
 
-CLI equivalent:
-
-```bash
-omni-route-config init                    # install + start OmniRoute (idempotent)
-omni-route-config configure               # POST config/free-providers.yaml -> OmniRoute
-omni-route-config status                  # show running state + which providers are wired
-omni-route-config smoke-test              # send a dummy chat completion through the chain
-omni-route-config down                    # stop OmniRoute (keeps SQLite state)
-```
-
 ---
 
-## Catalog shape (`config/free-providers.yaml`)
+## What this is NOT
 
-```yaml
-# Each entry maps a free-tier provider that OmniRoute supports natively.
-# `provider` MUST match an OmniRoute provider id (see OmniRoute README).
-# `env_var` names the env var omni-route-config reads to find the API key.
-# `priority` (lower = higher priority) is passed to OmniRoute on POST.
-
-providers:
-  - provider: groq
-    env_var: GROQ_API_KEY
-    priority: 10
-    name: Groq (Llama 3.3 70B + Mixtral)
-    default_model: llama-3.3-70b-versatile
-
-  - provider: gemini
-    env_var: GEMINI_API_KEY
-    priority: 20
-    name: Gemini Free Tier
-    default_model: gemini-2.0-flash-exp
-
-  - provider: cerebras
-    env_var: CEREBRAS_API_KEY
-    priority: 30
-
-  - provider: openrouter
-    env_var: OPENROUTER_API_KEY
-    priority: 40
-    note: Free :free-suffixed models only.
-```
-
-Providers with missing env vars are silently skipped (logged once at startup). No POST happens for them — OmniRoute simply doesn't know about them, and falls through to whichever IS configured.
-
----
-
-## Env vars
-
-omni-route-config itself reads:
-
-| Var | Purpose | Default |
-|---|---|---|
-| `OMNIROUTE_URL` | OmniRoute base URL | `http://localhost:20128` |
-| `OMNIROUTE_PORT` | port if we're starting the service ourselves | `20128` |
-| `OMNIROUTE_API_TOKEN` | optional bearer token for OmniRoute admin API | none |
-| `OMNI_ROUTE_CONFIG_PATH` | override path to `free-providers.yaml` | bundled default |
-
-Plus all the provider keys named in your catalog (e.g. `GROQ_API_KEY`, `GEMINI_API_KEY`, …). See `config/free-providers.yaml` for the full list.
-
-OmniRoute itself reads ~38 of its own env vars (OAuth client secrets, JWT secrets, SQLite path, ...). We do NOT manage those — see OmniRoute's `.env.example`. omni-route-config only handles the *provider-key* layer.
-
----
-
-## Why a separate package
-
-OmniRoute is a Next.js + Express app with a dashboard and a SQLite DB. Configuring it manually for every fresh deploy is repetitive: click through the dashboard, paste keys, set priorities. omni-route-config replaces that clicking with `omni-route-config configure` reading a committed YAML + env-var keys.
-
-This is config-as-code on top of OmniRoute, nothing more.
+- Not a router. OmniRoute owns model selection, fallback, MCP, OAuth flows.
+- Not a manager for OmniRoute's full ~38 server-side env vars. Anything in `.env` is passed through Docker via `--env-file`, but only the fields documented in `.env.example` are owned by `env_sync`. Add more rows freely; they pass through.
+- Not a long-running service. Every CLI invocation is one-shot. The persistent state lives in:
+  - `.env` (your secrets + provider keys)
+  - Docker volume `omniroute-data` (OmniRoute's SQLite DB, admin accounts, provider connections)
+  - `.omniroute/` (only if you used the npx fallback — Docker doesn't write here)
 
 ---
 

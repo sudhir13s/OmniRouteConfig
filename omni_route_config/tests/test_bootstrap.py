@@ -12,8 +12,8 @@ from omni_route_config.catalog import ProviderCatalog, ProviderEntry
 @respx.mock
 async def test_status_reachable_returns_provider_count(monkeypatch):
     monkeypatch.setenv("OMNIROUTE_URL", "http://omni.test")
-    respx.get("http://omni.test/api/health").mock(
-        return_value=httpx.Response(200, json={"status": "ok", "version": "3.5.1"})
+    respx.get("http://omni.test/api/init").mock(
+        return_value=httpx.Response(200, json={"initialized": True, "version": "3.7.1"})
     )
     respx.get("http://omni.test/api/providers").mock(
         return_value=httpx.Response(
@@ -23,18 +23,13 @@ async def test_status_reachable_returns_provider_count(monkeypatch):
     s = await bootstrap.status()
     assert s.reachable is True
     assert s.providers_configured == 2
-    assert s.version == "3.5.1"
+    assert s.version == "3.7.1"
 
 
 @respx.mock
 async def test_status_unreachable(monkeypatch):
     monkeypatch.setenv("OMNIROUTE_URL", "http://omni.test")
-    respx.get("http://omni.test/api/health").mock(
-        side_effect=httpx.ConnectError("nope")
-    )
-    respx.get("http://omni.test/api/version").mock(
-        side_effect=httpx.ConnectError("nope")
-    )
+    respx.get("http://omni.test/api/init").mock(side_effect=httpx.ConnectError("nope"))
     respx.get("http://omni.test/").mock(side_effect=httpx.ConnectError("nope"))
     s = await bootstrap.status()
     assert s.reachable is False
@@ -147,12 +142,12 @@ async def test_apply_config_passes_provider_specific_data(monkeypatch):
 @respx.mock
 async def test_ensure_running_returns_existing_when_reachable(monkeypatch):
     monkeypatch.setenv("OMNIROUTE_URL", "http://omni.test")
-    respx.get("http://omni.test/api/health").mock(
-        return_value=httpx.Response(200, json={"version": "3.5.1"})
+    respx.get("http://omni.test/api/init").mock(
+        return_value=httpx.Response(200, json={"initialized": True, "version": "3.7.1"})
     )
     respx.get("http://omni.test/api/providers").mock(
         return_value=httpx.Response(200, json={"connections": []})
     )
     s = await bootstrap.ensure_running(prefer=("existing",))
     assert s.reachable is True
-    assert s.version == "3.5.1"
+    assert s.version == "3.7.1"

@@ -1,4 +1,4 @@
-"""omni-route-config — configure + bootstrap OmniRoute for $0-spend AI routing.
+"""OmniRouteConfig — configure + bootstrap OmniRoute for $0-spend AI routing.
 
 Public API:
 

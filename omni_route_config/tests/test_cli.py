@@ -46,8 +46,7 @@ def test_cli_catalog_default_path():
 @respx.mock
 def test_cli_status_unreachable_exits_2(monkeypatch):
     monkeypatch.setenv("OMNIROUTE_URL", "http://omni.test")
-    respx.get("http://omni.test/api/health").mock(side_effect=httpx.ConnectError("x"))
-    respx.get("http://omni.test/api/version").mock(side_effect=httpx.ConnectError("x"))
+    respx.get("http://omni.test/api/init").mock(side_effect=httpx.ConnectError("x"))
     respx.get("http://omni.test/").mock(side_effect=httpx.ConnectError("x"))
     buf = io.StringIO()
     with redirect_stdout(buf):
@@ -60,8 +59,8 @@ def test_cli_status_unreachable_exits_2(monkeypatch):
 @respx.mock
 def test_cli_status_reachable_exits_0(monkeypatch):
     monkeypatch.setenv("OMNIROUTE_URL", "http://omni.test")
-    respx.get("http://omni.test/api/health").mock(
-        return_value=httpx.Response(200, json={"version": "3.5.1"})
+    respx.get("http://omni.test/api/init").mock(
+        return_value=httpx.Response(200, json={"initialized": True, "version": "3.7.1"})
     )
     respx.get("http://omni.test/api/providers").mock(
         return_value=httpx.Response(200, json={"connections": []})

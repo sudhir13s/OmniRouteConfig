@@ -43,7 +43,30 @@ DEFAULT_PORT = 20128
 DEFAULT_URL = "http://localhost:20128"
 PID_DIR = Path(".omniroute")
 
-_HEALTH_PATHS = ("/api/health", "/api/version", "/")
+# Docker run defaults — overridable via env so users can point at their own
+# fork build (e.g. `omniroute:full` from `docker compose --profile full build`).
+DEFAULT_CONTAINER = "omniroute"
+DEFAULT_IMAGE = "diegosouzapw/omniroute:latest"
+DEFAULT_VOLUME = "omniroute-data"
+
+
+def _docker_container_name() -> str:
+    return os.environ.get("OMNIROUTE_CONTAINER", DEFAULT_CONTAINER)
+
+
+def _docker_image() -> str:
+    return os.environ.get("OMNIROUTE_IMAGE", DEFAULT_IMAGE)
+
+
+def _docker_volume() -> str:
+    return os.environ.get("OMNIROUTE_VOLUME", DEFAULT_VOLUME)
+
+# `/api/init` returns `{"initialized": true|false}` and is the canonical
+# health endpoint in OmniRoute (verified against v3.7.x). `/api/health`
+# and `/api/version` do NOT exist upstream. `/` returns a 307 redirect
+# to the dashboard — kept as a final fallback so we still detect a live
+# server even if `/api/init` is renamed in a future version.
+_HEALTH_PATHS = ("/api/init", "/")
 
 
 def _base_url() -> str:
@@ -74,7 +97,11 @@ async def _is_reachable(base: str, *, timeout: float = 2.0) -> tuple[bool, str |
                 if "json" in ct:
                     try:
                         body = resp.json()
-                        version = body.get("version") if isinstance(body, dict) else None
+                        if isinstance(body, dict):
+                            # Different endpoints surface different fields:
+                            # /api/init -> {"initialized": true}
+                            # /api/version (legacy) -> {"version": "..."}
+                            version = body.get("version") or body.get("instance", {}).get("version")
                     except ValueError:
                         pass
                 return True, version
@@ -177,19 +204,7 @@ async def ensure_running(
         elif strategy == "docker":
             if not _can_use_docker():
                 continue
-            _spawn(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "-d",
-                    "--name",
-                    "omniroute",
-                    "-p",
-                    f"{port or DEFAULT_PORT}:20128",
-                    "diegosouzapw/omniroute:latest",
-                ],
-            )
+            _start_docker(port=port or DEFAULT_PORT)
         if await _wait_until_reachable(base, timeout_s=timeout_s):
             return await status()
 
@@ -200,26 +215,119 @@ async def ensure_running(
     )
 
 
-def tear_down() -> bool:
-    """Kill the OmniRoute process we spawned (if any). Idempotent.
+def _docker_inspect_state(name: str) -> str | None:
+    """Returns the docker State.Status of a container or None if missing.
 
-    Does NOT touch externally-started instances. Returns True if a
-    process was killed.
+    States: "created", "running", "paused", "restarting", "removing",
+    "exited", "dead". None means the container does not exist.
     """
-    pid_file = PID_DIR / "pid"
-    if not pid_file.exists():
-        return False
     try:
-        pid = int(pid_file.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
+        proc = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Status}}", name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def _start_docker(*, port: int) -> None:
+    """Run OmniRoute in Docker with --env-file + persistent named volume.
+
+    Idempotent: if a container with the configured name is already
+    running, this is a no-op. If it exists but is stopped, we `docker
+    start` instead of re-running.
+    """
+    name = _docker_container_name()
+    state = _docker_inspect_state(name)
+    if state == "running":
+        return
+    if state in ("exited", "created", "dead"):
+        subprocess.run(["docker", "start", name], check=False, capture_output=True)
+        return
+
+    cmd: list[str] = [
+        "docker", "run", "-d",
+        "--name", name,
+        "--restart", "unless-stopped",
+        "-p", f"{port}:20128",
+        "-v", f"{_docker_volume()}:/app/data",
+    ]
+    env_file = Path(os.environ.get("OMNIROUTE_ENV_FILE", ".env"))
+    if env_file.exists():
+        cmd += ["--env-file", str(env_file.resolve())]
+    cmd.append(_docker_image())
+    PID_DIR.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    log_path = PID_DIR / "omniroute.log"
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"$ {' '.join(cmd)}\n")
+        if proc.stdout:
+            f.write(proc.stdout)
+        if proc.stderr:
+            f.write(proc.stderr)
+    if proc.returncode != 0:
+        # Surface to caller so `up`/`init` doesn't silently report
+        # "reachable" when docker run actually failed.
+        raise RuntimeError(
+            f"docker run failed (rc={proc.returncode}): "
+            f"{proc.stderr.strip() or proc.stdout.strip() or 'no output'}"
+        )
+
+
+def _stop_docker() -> bool:
+    """Stop the docker container if running. True if a stop happened."""
+    name = _docker_container_name()
+    state = _docker_inspect_state(name)
+    if state is None:
         return False
-    try:
-        os.kill(pid, 15)  # SIGTERM
-    except ProcessLookupError:
-        pid_file.unlink(missing_ok=True)
+    if state != "running":
+        # Container exists but isn't running — remove the stale entry.
+        subprocess.run(["docker", "rm", name], check=False, capture_output=True)
         return False
-    pid_file.unlink(missing_ok=True)
+    subprocess.run(["docker", "stop", name], check=False, capture_output=True)
+    subprocess.run(["docker", "rm", name], check=False, capture_output=True)
     return True
+
+
+def tear_down() -> bool:
+    """Stop the OmniRoute instance this CLI started. Idempotent.
+
+    Tries the docker container first (named, restart-policy aware); falls
+    back to PID-file based npx process. Returns True if anything was stopped.
+    """
+    stopped_docker = _stop_docker()
+
+    pid_file = PID_DIR / "pid"
+    stopped_proc = False
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
+            os.kill(pid, 15)  # SIGTERM
+            stopped_proc = True
+        except (OSError, ValueError, ProcessLookupError):
+            pass
+        pid_file.unlink(missing_ok=True)
+
+    return stopped_docker or stopped_proc
+
+
+def destroy_volume() -> bool:
+    """Remove the persistent docker volume. DESTROYS all OmniRoute data
+    (admin accounts, provider connections, logs). Caller must confirm.
+    Returns True if a volume was removed.
+    """
+    if not _can_use_docker():
+        return False
+    vol = _docker_volume()
+    proc = subprocess.run(
+        ["docker", "volume", "rm", vol], capture_output=True, text=True, check=False
+    )
+    return proc.returncode == 0
 
 
 # ============================================================

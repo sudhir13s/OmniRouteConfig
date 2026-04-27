@@ -8,7 +8,7 @@ to remember the path.
 
 Importing this module requires the optional `client` extra:
 
-    pip install "omni-route-config[client]"
+    pip install "OmniRouteConfig[client]"
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def openai_for_omniroute(
         from openai import OpenAI
     except ImportError as e:
         raise ImportError(
-            "Install the `client` extra: `pip install 'omni-route-config[client]'`"
+            "Install the `client` extra: `pip install 'OmniRouteConfig[client]'`"
         ) from e
 
     key = (

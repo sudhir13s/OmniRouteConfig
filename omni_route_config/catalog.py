@@ -31,6 +31,15 @@ class ProviderEntry(BaseModel):
     env_var: str = Field(
         description="Name of the env var holding the API key (e.g. GROQ_API_KEY)."
     )
+    aliases: list[str] | None = Field(
+        default=None,
+        description=(
+            "Alternate env var names that env_sync should accept as fallback "
+            "when the canonical `env_var` is empty. Useful when shells have a "
+            "differently-named key (e.g. CLAUDE_CONSOLE_API_KEY for ANTHROPIC_API_KEY). "
+            "First non-empty wins."
+        ),
+    )
     name: str | None = Field(
         default=None,
         description="Human label sent to OmniRoute on POST. Defaults to provider id.",
