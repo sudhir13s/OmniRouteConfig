@@ -402,9 +402,9 @@ async def apply_config(
     Idempotent — already-configured providers are reported as
     `already_present`, not re-POSTed.
 
-    `catalog=None` reads `config/free-providers.yaml` (or the
-    OMNI_ROUTE_CONFIG_PATH env var). Pass an explicit ProviderCatalog
-    to skip the file load.
+    `catalog=None` reads the bundled `omni_route_config/free-providers.yaml`
+    (or the OMNI_ROUTE_CONFIG_PATH env var). Pass an explicit
+    ProviderCatalog to skip the file load.
     """
     if catalog is None:
         catalog = load_catalog()
