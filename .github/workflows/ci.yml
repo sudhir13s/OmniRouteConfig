@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: lint + tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: install (editable + dev)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,yaml]"
+      - name: ruff
+        run: ruff check freellm/
+      - name: pytest
+        run: pytest -v
+      - name: CLI smoke
+        run: |
+          python -m freellm version
+          python -m freellm catalog
+          python -m freellm catalog --modality text
+          python -m freellm keys
+          python -m freellm plan --modality text --task-name ci-smoke || true

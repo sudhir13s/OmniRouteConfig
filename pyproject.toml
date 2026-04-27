@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "freellm"
+version = "0.1.0"
+description = "Free-tier LLM + multimodal router. Quota-aware fallback chain so total spend stays at $0."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Sudhir Singh" }]
+requires-python = ">=3.11"
+keywords = [
+    "llm",
+    "openai-compatible",
+    "free-tier",
+    "fallback",
+    "groq",
+    "gemini",
+    "openrouter",
+    "huggingface",
+    "litellm",
+    "multimodal",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "pydantic>=2.9,<3",
+]
+
+[project.optional-dependencies]
+runtime = [
+    "litellm>=1.50,<2",
+    "httpx>=0.27,<1",
+]
+yaml = [
+    "pyyaml>=6,<7",
+]
+dev = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+freellm = "freellm.cli:main"
+
+[project.urls]
+Repository = "https://github.com/sudhir13s/freellm"
+Issues = "https://github.com/sudhir13s/freellm/issues"
+
+[tool.setuptools.packages.find]
+include = ["freellm*"]
+exclude = ["freellm.tests*", "tests*"]
+
+[tool.setuptools.package-data]
+freellm = ["py.typed", "prompts/*.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["freellm/tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
