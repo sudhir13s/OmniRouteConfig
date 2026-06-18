@@ -39,7 +39,7 @@ dependencies = [
 
 [project.optional-dependencies]
 client = [
-    "openai>=1.50,<2",
+    "openai>=1.50,<3",
 ]
 dev = [
     "pytest>=8,<10",
